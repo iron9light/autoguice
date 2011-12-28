@@ -1,0 +1,4 @@
+<plugin>
+  <name>autoguice</name>
+  <classname>iron9light.autoguice.plugin.AutoGuicePlugin</classname>
+</plugin>
