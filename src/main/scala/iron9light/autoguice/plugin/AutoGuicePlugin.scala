@@ -5,8 +5,8 @@ import nsc.plugins.{PluginComponent, Plugin}
 import nsc.ast.TreeDSL
 import nsc.Global
 import nsc.symtab.Flags
-import nsc.transform.Transform
 import net.virtualvoid.string.MyNodePrinter
+import nsc.transform.{TypingTransformers, Transform}
 
 /**
  * @author il
@@ -76,24 +76,28 @@ class AddImplementedByAnnotation(val plugin: AutoGuicePlugin) extends PluginComp
   }
 } 
 
-class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with PluginComponentCommon with Transform with TreeDSL with MyNodePrinter{
+class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with PluginComponentCommon with Transform with TypingTransformers with TreeDSL with MyNodePrinter{
   val global = plugin.global
   import global._
 
   val phaseName = this.getClass.getSimpleName
-  val runsAfter = "namer" :: Nil
+  val runsAfter = "typer" :: Nil
 
   protected def newTransformer(unit: CompilationUnit): Transformer = new GenerateGuiceClassTransformer(unit)
 
-  class GenerateGuiceClassTransformer(unit: CompilationUnit) extends Transformer {
+  class GenerateGuiceClassTransformer(unit: CompilationUnit) extends TypingTransformer(unit) {
     def isAbstract(defdef: DefDef) = {
 //      defdef.rhs.isEmpty
       defdef.mods.isDeferred
     }
     
     def generateClassImpl(classDef: ClassDef): ClassDef = {
+      generateClassImpl(classDef, classDef.symbol.owner)
+    }
+    
+    def generateClassImpl(classDef: ClassDef, owner: Symbol): ClassDef = {
       val classSym = classDef.symbol
-      val classImplSym = classSym.owner.newClass(classDef.name.append("Impl").toTypeName)
+      val classImplSym: ClassSymbol = owner.newClass(classDef.name.append("Impl").toTypeName)
 
       classImplSym.flags |= Flags.PRIVATE
       classImplSym.setInfo(
@@ -103,7 +107,7 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
           classImplSym
         )
       )
-      classImplSym.owner.info.decls.enter(classImplSym)
+      owner.info.decls.enter(classImplSym)
 
       val (valDefs, methodDefs) = (for(defdef @ DefDef(_mods, name, _tparams, _vparamss, _tpt, _rhs) <- classDef.impl.body if isAbstract(defdef)) yield {
         val constrParamSym = classImplSym.newValue(classImplSym.pos.focus, name)
@@ -146,10 +150,18 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
     override def transform(tree: Tree): Tree = {
 
       val newTree: Tree = tree match {
+        case ClassDef(_, name, _, _) if name.toString == "XImpl" =>
+          inform(printer(tree))
+          tree
         case packageDef @ PackageDef(pid, stats) =>
           val newStats = stats.foldRight(List[Tree]()){
             case (classDef @ ClassDef(modifiers, typeName, tparams, impl), list) if isAutoInjectClass(classDef.symbol) =>
-              val classImplDef = generateClassImpl(classDef)
+              val owner0 = localTyper.context1.owner
+              localTyper.context1.owner = packageDef.symbol
+              val classImplDef = localTyper.typed {
+                generateClassImpl(classDef, packageDef.symbol)
+              }
+              localTyper.context1.owner = owner0
               classDef :: classImplDef :: list
             case (t, list) => t :: list
           }
