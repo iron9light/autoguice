@@ -150,18 +150,15 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
     override def transform(tree: Tree): Tree = {
 
       val newTree: Tree = tree match {
-        case ClassDef(_, name, _, _) if name.toString == "XImpl" =>
-          inform(printer(tree))
-          tree
         case packageDef @ PackageDef(pid, stats) =>
           val newStats = stats.foldRight(List[Tree]()){
             case (classDef @ ClassDef(modifiers, typeName, tparams, impl), list) if isAutoInjectClass(classDef.symbol) =>
-              val owner0 = localTyper.context1.owner
-              localTyper.context1.owner = packageDef.symbol
+              val owner0 = localTyper.context1.enclClass.owner
+              localTyper.context1.enclClass.owner = packageDef.symbol
               val classImplDef = localTyper.typed {
                 generateClassImpl(classDef, packageDef.symbol)
               }
-              localTyper.context1.owner = owner0
+              localTyper.context1.enclClass.owner = owner0
               classDef :: classImplDef :: list
             case (t, list) => t :: list
           }

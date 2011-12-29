@@ -26,4 +26,5 @@ The generated code:
 ```
 
 Nothing works now.
+
 I nead help: https://groups.google.com/d/topic/scala-language/3rw_pSHehd8/discussion
