@@ -97,7 +97,7 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
     
     def generateClassImpl(classDef: ClassDef, owner: Symbol): ClassDef = {
       val classSym = classDef.symbol
-      val classImplSym: ClassSymbol = owner.newClass(classDef.name.append("Impl").toTypeName)
+      val classImplSym: ClassSymbol = owner.newClass(classDef.name.append("Impl").toTypeName, classDef.pos.focus)
 
       classImplSym.flags |= (Flags.PRIVATE | Flags.SYNTHETIC | Flags.IMPLCLASS)
       classImplSym.setInfo(
@@ -110,15 +110,23 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
       owner.info.decls.enter(classImplSym)
 
       val (valDefs, methodDefs) = (for(defdef @ DefDef(_mods, name, _tparams, _vparamss, _tpt, _rhs) <- classDef.impl.body if isAbstract(defdef)) yield atOwner(classImplSym) {
-        val constrParamSym = classImplSym.newValueParameter(classImplSym.pos.focus, name)
+        val constrParamSym = classImplSym.newValue(classImplSym.pos.focus, name)
         constrParamSym.setInfo(defdef.symbol.tpe.resultType)
         constrParamSym.setFlag(Flags.PRIVATE | Flags.LOCAL | Flags.PARAMACCESSOR)
         classImplSym.info.decls.enter(constrParamSym)
 
-        val constrMethodSym: MethodSymbol = classImplSym.newMethod(name, classImplSym.pos.focus)
-
-        constrMethodSym.setInfo(defdef.symbol.tpe)
-        constrMethodSym.setFlag(Flags.STABLE | Flags.ACCESSOR | Flags.PARAMACCESSOR | Flags.METHOD)
+        val methodSym = defdef.symbol.cloneSymbol(classImplSym)
+        methodSym.setFlag(Flags.SYNTHETIC | Flags.ACCESSOR | Flags.PARAMACCESSOR)
+        methodSym.resetFlag(Flags.DEFERRED | Flags.ABSTRACT)
+        methodSym.setPos(defdef.pos.focus)
+        if(defdef.symbol.isStable) {
+          methodSym.setFlag(Flags.STABLE)
+        }
+        val constrMethodSym = methodSym
+//        val constrMethodSym: MethodSymbol = classImplSym.newMethod(name, classImplSym.pos.focus)
+//
+//        constrMethodSym.setInfo(defdef.symbol.tpe)
+//        constrMethodSym.setFlag(Flags.STABLE | Flags.ACCESSOR | Flags.PARAMACCESSOR | Flags.METHOD)
         classImplSym.info.decls.enter(constrParamSym)
 
         val valDef = (localTyper.typed{ ValDef(constrParamSym) }).asInstanceOf[ValDef]
@@ -137,18 +145,21 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
         NoPosition
       )
 
-//      classImplDef.impl.body.filter{
-//        case dd: DefDef if dd.name.toString == "<init>" => true
-//        case _ => false
-//      }.foreach(
-//        _.symbol.addAnnotation(AnnotationInfo(definitions.getClass("javax.inject.Inject": Name).tpe, Nil, Nil))
-//      )
+      classImplDef.impl.body.filter{
+        case dd: DefDef => dd.symbol.isPrimaryConstructor
+        case _ => false
+      }.foreach(
+        _.symbol.addAnnotation(AnnotationInfo(definitions.getClass("javax.inject.Inject": Name).tpe, Nil, Nil))
+      )
 
       classImplDef
     }
 
     override def transform(tree: Tree): Tree = {
       val newTree: Tree = tree match {
+//        case cd: ClassDef =>
+//          inform(nodeToString(cd))
+//          cd
         case packageDef @ PackageDef(pid, stats) =>
           val newStats = stats.foldRight(List[Tree]()){
             case (classDef @ ClassDef(modifiers, typeName, tparams, impl), list) if isAutoInjectClass(classDef.symbol) =>
