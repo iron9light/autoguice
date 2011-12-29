@@ -99,7 +99,7 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
       val classSym = classDef.symbol
       val classImplSym: ClassSymbol = owner.newClass(classDef.name.append("Impl").toTypeName)
 
-      classImplSym.flags |= Flags.PRIVATE
+      classImplSym.flags |= (Flags.PRIVATE | Flags.SYNTHETIC | Flags.IMPLCLASS)
       classImplSym.setInfo(
         ClassInfoType(
           definitions.ObjectClass.tpe :: classSym.tpe :: definitions.ScalaObjectClass.tpe :: Nil,
@@ -109,13 +109,11 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
       )
       owner.info.decls.enter(classImplSym)
 
-      val (valDefs, methodDefs) = (for(defdef @ DefDef(_mods, name, _tparams, _vparamss, _tpt, _rhs) <- classDef.impl.body if isAbstract(defdef)) yield {
-        val constrParamSym = classImplSym.newValue(classImplSym.pos.focus, name)
+      val (valDefs, methodDefs) = (for(defdef @ DefDef(_mods, name, _tparams, _vparamss, _tpt, _rhs) <- classDef.impl.body if isAbstract(defdef)) yield atOwner(classImplSym) {
+        val constrParamSym = classImplSym.newValueParameter(classImplSym.pos.focus, name)
         constrParamSym.setInfo(defdef.symbol.tpe.resultType)
         constrParamSym.setFlag(Flags.PRIVATE | Flags.LOCAL | Flags.PARAMACCESSOR)
         classImplSym.info.decls.enter(constrParamSym)
-
-        val valDef = ValDef(constrParamSym, EmptyTree)
 
         val constrMethodSym: MethodSymbol = classImplSym.newMethod(name, classImplSym.pos.focus)
 
@@ -123,14 +121,16 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
         constrMethodSym.setFlag(Flags.STABLE | Flags.ACCESSOR | Flags.PARAMACCESSOR | Flags.METHOD)
         classImplSym.info.decls.enter(constrParamSym)
 
-        val methodDef = DefDef(constrMethodSym, Select(This(classImplSym), name))
-
+        val valDef = (localTyper.typed{ ValDef(constrParamSym) }).asInstanceOf[ValDef]
+        val methodDef = localTyper.typed{ DefDef(constrMethodSym, Select(This(classImplSym), name)) }
+//        val valDef = ValDef(constrParamSym)
+//        val methodDef = DefDef(constrMethodSym, Select(This(classImplSym), name))
         (valDef, methodDef)
       }).unzip
 
       val classImplDef: ClassDef = ClassDef(
         classImplSym,
-        Modifiers(Flags.PRIVATE | Flags.LOCAL | Flags.PARAMACCESSOR),
+        NoMods,
         List(valDefs),
         List(List()),
         methodDefs,
@@ -148,17 +148,18 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
     }
 
     override def transform(tree: Tree): Tree = {
-
       val newTree: Tree = tree match {
         case packageDef @ PackageDef(pid, stats) =>
           val newStats = stats.foldRight(List[Tree]()){
             case (classDef @ ClassDef(modifiers, typeName, tparams, impl), list) if isAutoInjectClass(classDef.symbol) =>
-              val owner0 = localTyper.context1.enclClass.owner
-              localTyper.context1.enclClass.owner = packageDef.symbol
-              val classImplDef = localTyper.typed {
-                generateClassImpl(classDef, packageDef.symbol)
+//              val owner0 = localTyper.context1.enclClass.owner
+//              localTyper.context1.enclClass.owner = packageDef.symbol
+              val classImplDef = atOwner(packageDef.symbol) {localTyper.typed {
+                val classImpl = generateClassImpl(classDef, packageDef.symbol)
+                classImpl
               }
-              localTyper.context1.enclClass.owner = owner0
+              }
+//              localTyper.context1.enclClass.owner = owner0
               classDef :: classImplDef :: list
             case (t, list) => t :: list
           }

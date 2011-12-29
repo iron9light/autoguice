@@ -7,7 +7,7 @@ import iron9light.autoguice.annotation.autoinject
 trait X extends (() => Int) {
   def name: String
 
-  val someValue: Int
+  def someValue: Int
 
   def p = classOf[X]
 
