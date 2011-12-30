@@ -48,7 +48,9 @@ class AddAnnotations(val plugin: AutoGuicePlugin) extends PluginComponent with P
           }
           classDef
         case classDef: ClassDef if isInjectClassImpl(classDef.symbol) =>
-          classDef.symbol.addAnnotation(injectAnnotation)
+          classDef.impl.body.filter(_.symbol.isPrimaryConstructor).foreach{
+            _.symbol.addAnnotation(injectAnnotation)
+          }
           classDef
         case _ => tree
       }

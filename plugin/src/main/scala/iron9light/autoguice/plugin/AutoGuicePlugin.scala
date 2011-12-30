@@ -33,6 +33,6 @@ trait PluginComponentCommon {self: PluginComponent =>
       case _ => false
     }
   }
-  
+
   val implSubfix = "__Impl"
 }

@@ -3,14 +3,13 @@ package iron9light.autoguice.plugin
 import tools.nsc.plugins.PluginComponent
 import tools.nsc.transform.{TypingTransformers, Transform}
 import tools.nsc.ast.TreeDSL
-import net.virtualvoid.string.MyNodePrinter
 import tools.nsc.symtab.Flags
 
 /**
  * @author il
  */
 
-class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with PluginComponentCommon with Transform with TypingTransformers with TreeDSL with MyNodePrinter{
+class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with PluginComponentCommon with Transform with TypingTransformers with TreeDSL {
   val global = plugin.global
   import global._
 

@@ -2,11 +2,15 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <groupId>iron9light</groupId>
-    <artifactId>autoguice</artifactId>
-    <version>0.1-SNAPSHOT</version>
+  <modelVersion>4.0.0</modelVersion>
+  <version>0.1-SNAPSHOT</version>
+  <groupId>iron9light.autoguice</groupId>
+  <artifactId>parent</artifactId>
+  <packaging>pom</packaging>
+  <modules>
+    <module>annotation</module>
+    <module>plugin</module>
+  </modules>
 
   <properties>
     <scala.version>2.9.1</scala.version>
@@ -84,97 +88,4 @@
       </snapshots>
     </pluginRepository>
   </pluginRepositories>
-
-  <dependencies>
-    <dependency>
-      <groupId>ch.qos.logback</groupId>
-      <artifactId>logback-classic</artifactId>
-      <version>0.9.29</version>
-    </dependency>
-    <dependency>
-      <groupId>org.scala-lang</groupId>
-      <artifactId>scala-library</artifactId>
-      <version>${scala.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.scala-lang</groupId>
-      <artifactId>scala-compiler</artifactId>
-      <version>${scala.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>com.google.inject</groupId>
-      <artifactId>guice</artifactId>
-      <version>3.0</version>
-    </dependency>
-    <dependency>
-      <groupId>junit</groupId>
-      <artifactId>junit</artifactId>
-      <version>4.9</version>
-      <scope>test</scope>
-    </dependency>
-    <dependency>
-      <groupId>org.scalatest</groupId>
-      <artifactId>scalatest_${scala.version}</artifactId>
-      <version>1.6.1</version>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
-
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.scala-tools</groupId>
-        <artifactId>maven-scala-plugin</artifactId>
-        <version>2.15.2</version>
-        <executions>
-          <execution>
-            <goals>
-              <goal>compile</goal>
-              <goal>testCompile</goal>
-            </goals>
-          </execution>
-        </executions>
-        <configuration>
-          <scalaVersion>${scala.version}</scalaVersion>
-          <compilerPlugins>
-            <compilerPlugin>
-              <groupId>org.scala-lang.plugins</groupId>
-              <artifactId>continuations</artifactId>
-              <version>${scala.version}</version>
-            </compilerPlugin>
-          </compilerPlugins>
-          <args>
-            <!--<arg>-P:continuations:enable</arg>-->
-          </args>
-          <jvmArgs>
-            <jvmArg>-Xmx2048m</jvmArg>
-          </jvmArgs>
-          <recompileMode>modified-only</recompileMode>
-          <launchers>
-            <launcher>
-              <id>scalatest</id>
-              <mainClass>org.scalatest.tools.Runner</mainClass>
-              <args>
-                <arg>-p</arg>
-                <arg>${project.build.testOutputDirectory}</arg>
-              </args>
-              <jvmArgs>
-                <jvmArg>-Xmx1024m</jvmArg>
-              </jvmArgs>
-            </launcher>
-          </launchers>
-        </configuration>
-      </plugin>
-      <plugin>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <version>2.9</version>
-        <configuration>
-          <useManifestOnlyJar>false</useManifestOnlyJar>
-          <includes>
-            <include>**/*Suite.*</include>
-          </includes>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
 </project>
