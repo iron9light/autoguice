@@ -15,3 +15,8 @@ project/plugins/project/
 # IntelliJ IDEA
 .idea/
 *.iml
+
+# Eclipse
+.project
+.classpath
+.cache

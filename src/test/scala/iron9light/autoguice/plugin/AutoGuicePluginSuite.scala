@@ -16,6 +16,7 @@ class AutoGuicePluginSuite extends FunSuite {
   test("") {
     val settings = new Settings
     settings.outputDirs.setSingleOutput(new VirtualDirectory("(memory)", None))
+//    settings.browse.value = "typer" :: Nil
 
     val compiler = new Global(settings, new ConsoleReporter(settings)) {
       override protected def computeInternalPhases() {
