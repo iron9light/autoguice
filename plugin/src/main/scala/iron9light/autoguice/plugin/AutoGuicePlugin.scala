@@ -13,9 +13,10 @@ class AutoGuicePlugin(val global: Global) extends Plugin {
   val description = "support for the @autoinject annotation"
 
   val components =
-    // new GenerateGuiceClass(this) ::
-    new GenerateInjectClass(this) ::
-    new AddAnnotations(this) :: Nil
+    new GenerateGuiceClass(this) ::
+      // new GenerateInjectClass(this) ::
+      // new AddAnnotations(this) ::
+      Nil
 }
 
 trait PluginComponentCommon {self: PluginComponent =>

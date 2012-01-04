@@ -14,7 +14,7 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
   import global._
 
   val phaseName = this.getClass.getSimpleName
-  val runsAfter = "namer" :: Nil
+  val runsAfter = "typer" :: Nil
 
   protected def newTransformer(unit: CompilationUnit): Transformer = new GenerateGuiceClassTransformer(unit)
 
@@ -23,16 +23,48 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
       //      defdef.rhs.isEmpty
       defdef.mods.isDeferred
     }
-
-    def generateClassImpl(classDef: ClassDef): ClassDef = {
-      generateClassImpl(classDef, classDef.symbol.owner)
+    
+    def addGetters(classDef: ClassDef): ClassDef = {
+      val impl = classDef.impl
+      val newBody: List[Tree] = impl.body.flatMap {
+        tree => tree match {
+          case ValDef(mods, name, tpt, rhs) =>
+            val sym = tree.symbol
+            val zz = sym.getter(sym.owner)
+            atOwner(sym.owner) {
+              val newName = nme.getterToLocal(name)
+              val vdef = treeCopy.ValDef(tree, mods | Flags.PRIVATE | Flags.LOCAL, newName, tpt, rhs)
+              vdef.symbol.flags |= (Flags.PRIVATE | Flags.LOCAL)
+              vdef.symbol.name = newName
+              val getterSym = vdef.symbol.newGetter
+              getterSym.flags &= (~Flags.PRIVATE & ~Flags.LOCAL)
+              getterSym.info = NullaryMethodType(vdef.symbol.tpe)
+              vdef.symbol.owner.info.decls.enter(getterSym)
+              val getterDef: DefDef = atPos(vdef.pos.focus) {
+                val rhs = gen.mkCheckInit(Select(This(sym.owner), vdef.symbol))
+                val r = localTyper.typed {
+                  atPos(getterSym.pos.focus) {
+                    DefDef(getterSym, rhs)
+                  }
+                }.asInstanceOf[DefDef]
+                r.tpt.setPos(tpt.pos.focus)
+                r
+              }
+              vdef :: getterDef :: Nil
+            }
+          case _ =>
+            tree :: Nil
+        }
+      }
+      val newImpl = treeCopy.Template(impl, impl.parents, impl.self, newBody)
+      treeCopy.ClassDef(classDef, classDef.mods, classDef.name, classDef.tparams, newImpl)
     }
 
     def generateClassImpl(classDef: ClassDef, owner: Symbol): ClassDef = {
       val classSym = classDef.symbol
       val classImplSym: ClassSymbol = owner.newClass(classDef.name.append(implSubfix).toTypeName, classDef.pos.focus)
 
-      classImplSym.flags |= (Flags.PRIVATE | Flags.SYNTHETIC | Flags.IMPLCLASS)
+      classImplSym.flags |= (Flags.PRIVATE | Flags.SYNTHETIC)
       classImplSym.setInfo(
         ClassInfoType(
           definitions.ObjectClass.tpe :: classSym.tpe :: definitions.ScalaObjectClass.tpe :: Nil,
@@ -42,43 +74,29 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
       )
       owner.info.decls.enter(classImplSym)
 
-      val (valDefs, methodDefs) = (for(defdef @ DefDef(_mods, name, _tparams, _vparamss, _tpt, _rhs) <- classDef.impl.body if isAbstract(defdef)) yield atOwner(classImplSym) {
-        val constrParamSym = classImplSym.newValue(classImplSym.pos.focus, name)
+      val valDefs = for(defdef @ DefDef(_mods, name, _tparams, _vparamss, _tpt, _rhs) <- classDef.impl.body if isAbstract(defdef)) yield {
+        val constrParamSym: TermSymbol = classImplSym.newValue(classImplSym.pos.focus, name)
         constrParamSym.setInfo(defdef.symbol.tpe.resultType)
-        constrParamSym.setFlag(Flags.PRIVATE | Flags.LOCAL | Flags.PARAMACCESSOR)
+        constrParamSym.setFlag(/*Flags.PRIVATE | Flags.LOCAL |*/ Flags.PARAMACCESSOR)
         classImplSym.info.decls.enter(constrParamSym)
 
-        //        val methodSym = defdef.symbol.cloneSymbol(classImplSym)
-        //        methodSym.setFlag(Flags.SYNTHETIC | Flags.ACCESSOR | Flags.PARAMACCESSOR)
-        //        methodSym.resetFlag(Flags.DEFERRED | Flags.ABSTRACT)
-        //        methodSym.setPos(defdef.pos.focus)
-        ////        if(defdef.symbol.isStable) {
-        //          methodSym.setFlag(Flags.STABLE)
-        ////        }
-        //        val constrMethodSym = methodSym
+        atOwner(classImplSym) {
+          (localTyper.typed{ ValDef(constrParamSym) }).asInstanceOf[ValDef]
+        }
+      }
 
-        val constrMethodSym: MethodSymbol = classImplSym.newMethod(name, defdef.pos.focus)
-
-        constrMethodSym.setInfo(defdef.symbol.tpe)
-        //        constrMethodSym.setInfo( MethodType(Nil, defdef.symbol.tpe.resultType))
-        constrMethodSym.setFlag(Flags.STABLE | Flags.ACCESSOR | Flags.PARAMACCESSOR)
-        classImplSym.info.decls.enter(constrParamSym)
-
-        val valDef = (localTyper.typed{ ValDef(constrParamSym) }).asInstanceOf[ValDef]
-        val methodDef = localTyper.typed{ DefDef(constrMethodSym, Select(This(classImplSym), name)) }
-        //        val valDef = ValDef(constrParamSym)
-        //        val methodDef = DefDef(constrMethodSym, Select(This(classImplSym), name))
-        (valDef, methodDef)
-      }).unzip
-
-      val classImplDef: ClassDef = ClassDef(
-        classImplSym,
-        NoMods,
-        List(valDefs),
-        List(List()),
-        methodDefs,
-        NoPosition
-      )
+      val classImplDef: ClassDef = atOwner(owner) {
+        localTyper.typed {
+          ClassDef(
+            classImplSym,
+            NoMods,
+            List(valDefs),
+            List(List()),
+            Nil,
+            NoPosition
+          )
+        }.asInstanceOf[ClassDef]
+      }
 
       classImplDef.impl.body.filter{
         case dd: DefDef => dd.symbol.isPrimaryConstructor
@@ -87,31 +105,30 @@ class GenerateGuiceClass(plugin: AutoGuicePlugin) extends PluginComponent with P
         _.symbol.addAnnotation(AnnotationInfo(definitions.getClass("javax.inject.Inject": Name).tpe, Nil, Nil))
       )
 
-      classImplDef
+      addGetters(classImplDef)
     }
 
     override def transform(tree: Tree): Tree = {
       val newTree: Tree = tree match {
-        //        case cd: ClassDef =>
-        //          inform(nodeToString(cd))
-        //          cd
         case packageDef @ PackageDef(pid, stats) =>
           val newStats = stats.foldRight(List[Tree]()){
             case (classDef @ ClassDef(modifiers, typeName, tparams, impl), list) if isAutoInjectClass(classDef.symbol) =>
-              //              val owner0 = localTyper.context1.enclClass.owner
-              //              localTyper.context1.enclClass.owner = packageDef.symbol
-              val classImplDef = atOwner(packageDef.symbol) {localTyper.typed {
-                val classImpl = generateClassImpl(classDef, packageDef.symbol)
-                classImpl
+              val classImplDef = generateClassImpl(classDef, packageDef.symbol.moduleClass)
+              try {
+                val annoTpe: Type = definitions.getClass("com.google.inject.ImplementedBy").tpe
+                val annotationInfo = AnnotationInfo(annoTpe, Nil, ("value": Name, LiteralAnnotArg(Constant(classImplDef.symbol.tpe))) :: Nil)
+                classDef.symbol.addAnnotation(annotationInfo)
+                classDef :: classImplDef :: list
+              } catch {
+                case e =>
+                  warning(e.toString)
+                  classDef :: list
               }
-              }
-              //              localTyper.context1.enclClass.owner = owner0
-              classDef :: classImplDef :: list
             case (t, list) => t :: list
           }
 
           val newPackageDef = treeCopy.PackageDef(packageDef, pid, newStats)
-          global.treeBrowser.browse(newPackageDef)
+//          global.treeBrowser.browse(newPackageDef)
           newPackageDef
         case _ => tree
       }
